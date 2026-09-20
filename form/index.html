@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>実食メモ</title>
+<style>
+  :root {
+    --ground:#ffffff; --panel:#f7f6f5; --ink:#2b2928; --muted:#77726f;
+    --rule:#e2dfdc; --accent:#ff2139; --ok:#1f8a4c; --warn:#b86e00;
+    --r:8px;
+    --jp:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic Medium",Meiryo,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--ground:#16161a;--panel:#1e1e23;--ink:#e9e6e3;--muted:#9b9793;--rule:#34343c;--accent:#ff5468;--ok:#4cc985;--warn:#e0a33c}
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{background:var(--ground)}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--jp);
+       font-size:16px;line-height:1.7;-webkit-text-size-adjust:100%}
+
+  /* ---- ヘッダ ---- */
+  .top{position:sticky;top:0;z-index:20;background:var(--ground);
+       border-bottom:1px solid var(--rule);padding:10px 14px calc(10px + env(safe-area-inset-top)) ;
+       padding-top:calc(10px + env(safe-area-inset-top));display:flex;gap:10px;align-items:center}
+  .top h1{font-size:15px;margin:0;font-weight:700;white-space:nowrap}
+  .saved{font-size:11.5px;color:var(--muted);margin-left:auto;white-space:nowrap}
+  .saved.on{color:var(--ok)}
+  .btn{font-family:inherit;font-size:13px;padding:7px 12px;border-radius:var(--r);
+       border:1px solid var(--rule);background:var(--panel);color:var(--ink);cursor:pointer;white-space:nowrap}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  .btn.ghost{background:transparent}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .wrap{max-width:720px;margin:0 auto;padding:0 14px 120px}
+
+  /* ---- 記録の切替 ---- */
+  .entries{display:flex;gap:7px;overflow-x:auto;padding:10px 0 4px;scrollbar-width:thin}
+  .etab{flex:0 0 auto;padding:6px 11px;border-radius:100px;border:1px solid var(--rule);
+        background:var(--panel);font-size:12.5px;cursor:pointer;max-width:170px;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-family:inherit}
+  .etab[aria-current="true"]{border-color:var(--accent);background:var(--accent);color:#fff;font-weight:700}
+
+  /* ---- セクション ---- */
+  section{margin-top:22px}
+  h2{font-size:13px;margin:0 0 10px;font-weight:700;letter-spacing:.02em;
+     display:flex;align-items:baseline;gap:8px}
+  h2 small{font-weight:400;color:var(--muted);font-size:11.5px}
+
+  .row{display:grid;grid-template-columns:78px 1fr;gap:8px;align-items:center;margin-bottom:8px}
+  .row label{font-size:13px;color:var(--muted)}
+  input[type=text],input[type=date],input[type=number],textarea,select{
+    width:100%;font-family:inherit;font-size:16px;padding:10px 11px;border-radius:var(--r);
+    border:1px solid var(--rule);background:var(--panel);color:var(--ink)}
+  textarea{line-height:1.85;resize:vertical}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+
+  .inline{display:flex;gap:7px;flex-wrap:wrap}
+  .inline .btn{flex:0 0 auto}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .chip{padding:8px 12px;border-radius:100px;border:1px solid var(--rule);background:var(--panel);
+        font-size:18px;cursor:pointer;line-height:1;font-family:inherit}
+  .chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent)}
+  .seg{display:flex;gap:0;border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;width:max-content}
+  .seg button{padding:9px 20px;border:0;background:var(--panel);color:var(--ink);
+              font-family:inherit;font-size:14px;cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--accent);color:#fff;font-weight:700}
+
+  /* ---- 点数 ---- */
+  .scores{border:1px solid var(--rule);border-radius:var(--r);overflow:hidden}
+  .srow{display:grid;grid-template-columns:1fr 84px 62px;align-items:center;gap:0;
+        border-bottom:1px solid var(--rule)}
+  .srow:last-child{border-bottom:0}
+  .srow.total{background:var(--panel)}
+  .srow .nm{padding:12px 13px;font-size:14px}
+  .srow.total .nm{font-weight:700;font-size:15px}
+  .srow input{border:0;border-left:1px solid var(--rule);border-radius:0;background:transparent;
+              text-align:center;font-size:20px;font-weight:700;padding:12px 4px;
+              font-variant-numeric:tabular-nums}
+  .srow.total input{font-size:24px}
+  .srow input:focus{outline:0;background:var(--accent);color:#fff}
+  .srow .eq{padding:0 10px;font-size:13px;color:var(--muted);text-align:right;
+            font-variant-numeric:tabular-nums;border-left:1px solid var(--rule);align-self:stretch;
+            display:flex;align-items:center;justify-content:flex-end}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.7}
+
+  /* ---- 写真 ---- */
+  .drop{border:2px dashed var(--rule);border-radius:var(--r);padding:22px 14px;text-align:center;
+        color:var(--muted);font-size:13.5px;cursor:pointer;background:var(--panel)}
+  .drop.hot{border-color:var(--accent);color:var(--ink)}
+  .photos{display:grid;gap:10px;margin-top:12px}
+  .ph{display:grid;grid-template-columns:104px 1fr;gap:10px;border:1px solid var(--rule);
+      border-radius:var(--r);padding:9px;background:var(--panel)}
+  .ph .thumbwrap{position:relative;line-height:0}
+  .ph canvas{width:100%;height:auto;border-radius:5px;display:block;cursor:crosshair;touch-action:none}
+  .ph .n{position:absolute;top:3px;left:3px;background:rgba(0,0,0,.66);color:#fff;
+         font-size:10.5px;padding:1px 5px;border-radius:3px}
+  .ph .meta{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .ph input{font-size:14px;padding:8px 9px}
+  .ph .acts{display:flex;gap:5px;flex-wrap:wrap}
+  .ph .acts .btn{font-size:11.5px;padding:5px 9px}
+  .ph .blurred{color:var(--warn);font-size:11px}
+
+  .foot{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--ground);
+        border-top:1px solid var(--rule);padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+        display:flex;gap:9px;align-items:center}
+  .foot .grow{flex:1 1 auto;font-size:11.5px;color:var(--muted);line-height:1.5;min-width:0}
+
+  dialog{border:0;border-radius:12px;padding:0;max-width:min(560px,92vw);background:var(--ground);color:var(--ink)}
+  dialog::backdrop{background:rgba(0,0,0,.55)}
+  .dlg{padding:20px}
+  .dlg h3{margin:0 0 10px;font-size:16px}
+  .dlg p{margin:0 0 14px;font-size:13.5px;color:var(--muted);line-height:1.8}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>実食メモ</h1>
+  <button class="btn ghost" id="newEntry" type="button">＋ 新しい店</button>
+  <span class="saved" id="saved">—</span>
+</div>
+
+<div class="wrap">
+  <div class="entries" id="entries"></div>
+
+  <section>
+    <h2>基本</h2>
+    <div class="row"><label for="f-date">日付</label><input type="date" id="f-date"></div>
+    <div class="row"><label for="f-name">店名</label><input type="text" id="f-name" placeholder="正式な店名" autocomplete="off"></div>
+    <div class="inline" style="margin:4px 0 10px 86px">
+      <button class="btn" type="button" id="s-google">Googleで探す</button>
+      <button class="btn" type="button" id="s-tabelog">食べログで探す</button>
+      <button class="btn" type="button" id="s-map">地図で探す</button>
+    </div>
+    <div class="row"><label for="f-addr">住所</label><input type="text" id="f-addr" placeholder="検索結果から貼る" autocomplete="off"></div>
+    <div class="row"><label for="f-tel">電話</label><input type="text" id="f-tel" inputmode="tel" autocomplete="off"></div>
+    <div class="row"><label for="f-gurl">Google</label><input type="text" id="f-gurl" placeholder="URL" autocomplete="off"></div>
+    <div class="row"><label for="f-turl">食べログ</label><input type="text" id="f-turl" placeholder="URL" autocomplete="off"></div>
+    <p class="hint">店名を入れて上のボタンを押すと検索が開きます。出てきたURLを貼ってください。<br>
+      ※ Google Places の鍵を用意すれば、住所・電話・リンクは自動で埋まるようになります。</p>
+  </section>
+
+  <section>
+    <h2>天気</h2>
+    <div class="chips" id="wx"></div>
+    <input type="text" id="f-wx" placeholder="自由に書いてもいい（例：小雨のち晴れ）" autocomplete="off">
+  </section>
+
+  <section>
+    <h2>時間帯と金額</h2>
+    <div class="seg" id="slot" style="margin-bottom:10px">
+      <button type="button" data-v="昼" aria-pressed="false">昼</button>
+      <button type="button" data-v="夜" aria-pressed="false">夜</button>
+    </div>
+    <div class="row"><label for="f-yen">1人あたり</label><input type="text" id="f-yen" inputmode="numeric" placeholder="円"></div>
+  </section>
+
+  <section>
+    <h2>点数 <small>各50点満点</small></h2>
+    <div class="scores" id="scores"></div>
+    <p class="hint" id="scoreHint"></p>
+  </section>
+
+  <section>
+    <h2>コメント <small>殴り書きでいい</small></h2>
+    <textarea id="f-body" rows="9" placeholder="思ったことをそのまま。キーボードのマイクで音声入力もできます。"></textarea>
+    <div class="inline" style="margin-top:9px">
+      <button class="btn" type="button" id="arrange">うどんが主食風にアレンジ</button>
+      <span class="hint" style="margin:0;align-self:center">（この端末では準備中）</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>写真 <small id="phCount">0枚</small></h2>
+    <div class="drop" id="drop">
+      ここに写真をドラッグ、またはタップして選ぶ<br>
+      <span style="font-size:12px">長辺400pxに縮小して保存します（サイトと同じ大きさ）</span>
+    </div>
+    <input type="file" id="picker" accept="image/*" multiple hidden>
+    <div class="photos" id="photos"></div>
+  </section>
+</div>
+
+<div class="foot">
+  <span class="grow" id="footNote">自動保存しています</span>
+  <button class="btn" type="button" id="delEntry">削除</button>
+  <button class="btn primary" type="button" id="exportBtn">書き出す</button>
+</div>
+
+<dialog id="dlg"><div class="dlg">
+  <h3 id="dlgT"></h3><p id="dlgB"></p>
+  <div class="inline" style="justify-content:flex-end">
+    <button class="btn" type="button" id="dlgNo">やめる</button>
+    <button class="btn primary" type="button" id="dlgYes">はい</button>
+  </div>
+</div></dialog>
+
+<script>
+"use strict";
+/* ============================================================
+   実食メモ — うどんが主食のレビュー入力
+   ・入力は全部この端末の中に保存される（localStorage）
+   ・「書き出す」でJSONを1つ落とす。写真も中に入る
+   ・外部へ勝手に送信しない
+   ============================================================ */
+
+const SCORE_KEYS = [
+  {k:'total',  n:'総合'},
+  {k:'taste',  n:'料理・味'},
+  {k:'service',n:'サービス'},
+  {k:'mood',   n:'雰囲気'},
+  {k:'cp',     n:'CP'},
+  {k:'drink',  n:'酒・ドリンク'}
+];
+const WEATHER = ['☀️','⛅','☁️','🌧️','⛈️','🌨️','🌫️','🌬️'];
+const KEY = 'udon-memo-v1';
+const MAXW = 400;
+
+const $ = (s)=>document.querySelector(s);
+const el = (t,c)=>{const e=document.createElement(t); if(c) e.className=c; return e;};
+const todayStr = ()=>{const d=new Date(); const p=(n)=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());};
+
+function blank(){
+  const s={}; SCORE_KEYS.forEach(x=>s[x.k]='');
+  return {id:'e'+Date.now()+Math.floor(Math.random()*1000), date:todayStr(), name:'', addr:'', tel:'',
+          gurl:'', turl:'', weather:'', slot:'', yen:'', scores:s, body:'', photos:[], updated:Date.now()};
+}
+
+let store = load();
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){ const d=JSON.parse(raw); if(d && d.entries && d.entries.length) return d; }
+  }catch(e){}
+  const e = blank();
+  return {entries:[e], current:e.id};
+}
+let saveTimer=null;
+function save(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=>{
+    try{
+      localStorage.setItem(KEY, JSON.stringify(store));
+      const s=$('#saved'); s.textContent='保存済み'; s.classList.add('on');
+      setTimeout(()=>s.classList.remove('on'), 1400);
+    }catch(err){
+      $('#saved').textContent='保存できません（容量超過かも）';
+    }
+  }, 250);
+}
+const cur = ()=> store.entries.find(e=>e.id===store.current) || store.entries[0];
+
+/* ---------- 記録タブ ---------- */
+function drawTabs(){
+  const box=$('#entries'); box.textContent='';
+  store.entries.forEach(e=>{
+    const b=el('button','etab'); b.type='button';
+    b.textContent = (e.name || '（店名未入力）') + '　' + (e.date||'').slice(5);
+    b.setAttribute('aria-current', e.id===store.current ? 'true':'false');
+    b.onclick=()=>{ store.current=e.id; save(); drawAll(); };
+    box.appendChild(b);
+  });
+}
+
+/* ---------- 点数 ---------- */
+function drawScores(){
+  const box=$('#scores'); box.textContent='';
+  SCORE_KEYS.forEach((sk,i)=>{
+    const r=el('div','srow'+(sk.k==='total'?' total':''));
+    const nm=el('div','nm'); nm.textContent=sk.n; r.appendChild(nm);
+    const inp=el('input'); inp.type='text'; inp.inputMode='numeric';
+    inp.setAttribute('pattern','[0-9]*'); inp.maxLength=2; inp.dataset.k=sk.k; inp.dataset.i=String(i);
+    inp.value = cur().scores[sk.k] || '';
+    inp.setAttribute('aria-label', sk.n+'（50点満点）');
+    r.appendChild(inp);
+    const eq=el('div','eq'); eq.dataset.eq=sk.k; r.appendChild(eq);
+    box.appendChild(r);
+  });
+  wireScores(); refreshEq();
+}
+function refreshEq(){
+  const c=cur(); let sum=0,n=0;
+  SCORE_KEYS.forEach(sk=>{
+    const v=c.scores[sk.k];
+    const eq=document.querySelector('[data-eq="'+sk.k+'"]');
+    if(eq) eq.textContent = v==='' ? '—' : (Number(v)/10).toFixed(1);
+    if(sk.k!=='total' && v!==''){ sum+=Number(v); n++; }
+  });
+  const avg = n ? (sum/n) : null;
+  $('#scoreHint').textContent = avg===null
+    ? '数字を入れてEnterを押すと次へ進みます。6〜9で始めたときは自動で進みます。'
+    : '細目の平均 ' + avg.toFixed(1) + '点（' + (avg/10).toFixed(2) + '）。総合はこれに縛られません。';
+}
+function wireScores(){
+  const inputs=[...document.querySelectorAll('#scores input')];
+  inputs.forEach((inp,idx)=>{
+    inp.addEventListener('focus', ()=>inp.select());
+    inp.addEventListener('input', ()=>{
+      let v=inp.value.replace(/[^0-9]/g,'');
+      if(v.length>2) v=v.slice(0,2);
+      if(Number(v)>50) v=v.slice(0,1);          // 51以上は打てない
+      inp.value=v;
+      cur().scores[inp.dataset.k]=v; cur().updated=Date.now(); save(); refreshEq();
+      // 2桁入ったら次へ。1桁でも6〜9なら50を超えないので次へ
+      if(v.length===2 || (v.length===1 && Number(v)>5)) next(idx);
+    });
+    inp.addEventListener('keydown', (ev)=>{
+      if(ev.key==='Enter'){ ev.preventDefault(); next(idx); }
+      else if(ev.key==='ArrowDown'){ ev.preventDefault(); next(idx); }
+      else if(ev.key==='ArrowUp'){ ev.preventDefault(); if(idx>0) inputs[idx-1].focus(); }
+      else if(ev.key==='Backspace' && inp.value===''){ ev.preventDefault(); if(idx>0) inputs[idx-1].focus(); }
+    });
+  });
+  function next(idx){
+    if(idx+1 < inputs.length) inputs[idx+1].focus();
+    else { inputs[idx].blur(); $('#f-body').focus(); }
+  }
+}
+
+/* ---------- 天気 ---------- */
+function drawWeather(){
+  const box=$('#wx'); box.textContent='';
+  WEATHER.forEach(w=>{
+    const b=el('button','chip'); b.type='button'; b.textContent=w;
+    b.setAttribute('aria-label','天気 '+w);
+    b.setAttribute('aria-pressed', cur().weather===w ? 'true':'false');
+    b.onclick=()=>{ cur().weather = (cur().weather===w ? '' : w); $('#f-wx').value=cur().weather;
+                    cur().updated=Date.now(); save(); drawWeather(); };
+    box.appendChild(b);
+  });
+}
+
+/* ---------- 写真 ---------- */
+function drawPhotos(){
+  const box=$('#photos'); box.textContent='';
+  const ps=cur().photos;
+  $('#phCount').textContent = ps.length+'枚';
+  ps.forEach((p,i)=>{
+    const d=el('div','ph');
+    const tw=el('div','thumbwrap');
+    const cv=el('canvas'); cv.width=p.w; cv.height=p.h;
+    paint(cv,p);
+    enableBlurBox(cv,p,i);
+    tw.appendChild(cv);
+    const n=el('span','n'); n.textContent=String(i+1); tw.appendChild(n);
+    d.appendChild(tw);
+
+    const m=el('div','meta');
+    const cap=el('input'); cap.type='text'; cap.placeholder='この写真の説明（任意）'; cap.value=p.cap||'';
+    cap.oninput=()=>{p.cap=cap.value; cur().updated=Date.now(); save();};
+    m.appendChild(cap);
+
+    const acts=el('div','acts');
+    acts.appendChild(mk('↑', ()=>move(i,-1)));
+    acts.appendChild(mk('↓', ()=>move(i, 1)));
+    acts.appendChild(mk(p.blurs && p.blurs.length ? 'ぼかしを消す' : 'ぼかす', ()=>{
+      if(p.blurs && p.blurs.length){ p.blurs=[]; }
+      else { autoBlur(p); }
+      save(); drawPhotos();
+    }));
+    acts.appendChild(mk('削除', ()=>{ ps.splice(i,1); cur().updated=Date.now(); save(); drawPhotos(); }));
+    m.appendChild(acts);
+    if(p.blurs && p.blurs.length){
+      const w=el('span','blurred'); w.textContent='ぼかし '+p.blurs.length+'箇所'; m.appendChild(w);
+    } else {
+      const w=el('span','blurred'); w.style.color='var(--muted)';
+      w.textContent='顔が写っていたら、写真の上を指でなぞるとぼかせます';
+      m.appendChild(w);
+    }
+    d.appendChild(m);
+    box.appendChild(d);
+  });
+  function mk(t,fn){ const b=el('button','btn'); b.type='button'; b.textContent=t; b.onclick=fn; return b; }
+  function move(i,d){ const j=i+d; if(j<0||j>=ps.length) return;
+    const t=ps[i]; ps[i]=ps[j]; ps[j]=t; cur().updated=Date.now(); save(); drawPhotos(); }
+}
+function paint(cv,p){
+  const ctx=cv.getContext('2d');
+  const img=new Image();
+  img.onload=()=>{
+    ctx.drawImage(img,0,0,cv.width,cv.height);
+    (p.blurs||[]).forEach(b=>mosaic(ctx,b,cv));
+  };
+  img.src=p.data;
+}
+function mosaic(ctx,b,cv){
+  const x=Math.max(0,Math.round(b.x*cv.width)), y=Math.max(0,Math.round(b.y*cv.height));
+  const w=Math.min(cv.width-x,Math.round(b.w*cv.width)), h=Math.min(cv.height-y,Math.round(b.h*cv.height));
+  if(w<2||h<2) return;
+  const cell=Math.max(4, Math.round(Math.min(w,h)/5));
+  const src=ctx.getImageData(x,y,w,h);
+  for(let yy=0; yy<h; yy+=cell){
+    for(let xx=0; xx<w; xx+=cell){
+      let r=0,g=0,bl=0,c=0;
+      for(let j=yy;j<Math.min(yy+cell,h);j++) for(let i=xx;i<Math.min(xx+cell,w);i++){
+        const o=(j*w+i)*4; r+=src.data[o]; g+=src.data[o+1]; bl+=src.data[o+2]; c++;
+      }
+      if(!c) continue;
+      ctx.fillStyle='rgb('+Math.round(r/c)+','+Math.round(g/c)+','+Math.round(bl/c)+')';
+      ctx.fillRect(x+xx, y+yy, Math.min(cell,w-xx), Math.min(cell,h-yy));
+    }
+  }
+}
+/* 指やマウスで四角を描いてぼかす。自動検出が外れても必ず消せる */
+function enableBlurBox(cv,p){
+  let sx=0,sy=0,drag=false;
+  const pos=(e)=>{const r=cv.getBoundingClientRect();
+    const t=e.touches?e.touches[0]:e;
+    return {x:(t.clientX-r.left)/r.width, y:(t.clientY-r.top)/r.height};};
+  const start=(e)=>{e.preventDefault(); const q=pos(e); sx=q.x; sy=q.y; drag=true;};
+  const end=(e)=>{
+    if(!drag) return; drag=false; e.preventDefault();
+    const q=pos(e.changedTouches?{clientX:e.changedTouches[0].clientX,clientY:e.changedTouches[0].clientY}:e);
+    const b={x:Math.min(sx,q.x), y:Math.min(sy,q.y), w:Math.abs(q.x-sx), h:Math.abs(q.y-sy)};
+    if(b.w>0.04 && b.h>0.04){ p.blurs=p.blurs||[]; p.blurs.push(b); save(); drawPhotos(); }
+  };
+  cv.addEventListener('mousedown',start); cv.addEventListener('mouseup',end);
+  cv.addEventListener('touchstart',start,{passive:false}); cv.addEventListener('touchend',end,{passive:false});
+}
+/* ブラウザに顔検出があれば使う。無ければ手動だけ */
+async function autoBlur(p){
+  if(!('FaceDetector' in window)){
+    toast('この端末には自動の顔検出がありません。写真の上を指でなぞって囲んでください。'); return;
+  }
+  try{
+    const img=new Image(); img.src=p.data; await img.decode();
+    const fd=new window.FaceDetector({fastMode:true});
+    const faces=await fd.detect(img);
+    if(!faces.length){ toast('顔は見つかりませんでした。手でなぞって囲めます。'); return; }
+    p.blurs=faces.map(f=>({x:f.boundingBox.x/img.width, y:f.boundingBox.y/img.height,
+                           w:f.boundingBox.width/img.width, h:f.boundingBox.height/img.height}));
+  }catch(e){ toast('自動検出に失敗しました。手でなぞって囲めます。'); }
+}
+function toast(msg){ $('#footNote').textContent=msg; setTimeout(()=>{$('#footNote').textContent='自動保存しています';},4200); }
+
+/* 取り込み：長辺400pxへ縮小。EXIFはcanvas経由で落ちる（位置情報が残らない） */
+function intake(files){
+  const list=[...files].filter(f=>/^image\//.test(f.type));
+  if(!list.length) return;
+  let done=0;
+  $('#footNote').textContent='取り込み中…';
+  list.forEach(f=>{
+    const fr=new FileReader();
+    fr.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        const sc=Math.min(1, MAXW/Math.max(img.width,img.height));
+        const w=Math.round(img.width*sc), h=Math.round(img.height*sc);
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        cur().photos.push({name:f.name, w:w, h:h, cap:'', blurs:[],
+                           data:cv.toDataURL('image/jpeg',0.86)});
+        if(++done===list.length){ cur().updated=Date.now(); save(); drawPhotos();
+          $('#footNote').textContent=list.length+'枚を取り込みました'; }
+      };
+      img.onerror=()=>{ if(++done===list.length){ save(); drawPhotos(); } };
+      img.src=fr.result;
+    };
+    fr.readAsDataURL(f);
+  });
+}
+
+/* ---------- 画面全体 ---------- */
+function drawAll(){
+  const c=cur();
+  $('#f-date').value=c.date||''; $('#f-name').value=c.name||'';
+  $('#f-addr').value=c.addr||''; $('#f-tel').value=c.tel||'';
+  $('#f-gurl').value=c.gurl||''; $('#f-turl').value=c.turl||'';
+  $('#f-wx').value=c.weather||''; $('#f-yen').value=c.yen||''; $('#f-body').value=c.body||'';
+  [...document.querySelectorAll('#slot button')].forEach(b=>
+    b.setAttribute('aria-pressed', c.slot===b.dataset.v ? 'true':'false'));
+  drawTabs(); drawWeather(); drawScores(); drawPhotos();
+}
+function bindText(sel, key){
+  const e=$(sel);
+  e.addEventListener('input', ()=>{ cur()[key]=e.value; cur().updated=Date.now(); save();
+    if(key==='name'||key==='date') drawTabs(); });
+}
+['date','name','addr','tel','gurl','turl','yen','body'].forEach(k=>bindText('#f-'+k,k));
+$('#f-wx').addEventListener('input', ()=>{ cur().weather=$('#f-wx').value; save(); drawWeather(); });
+
+[...document.querySelectorAll('#slot button')].forEach(b=>b.onclick=()=>{
+  cur().slot = cur().slot===b.dataset.v ? '' : b.dataset.v; cur().updated=Date.now(); save(); drawAll();
+});
+
+$('#s-google').onclick = ()=>openSearch('https://www.google.com/search?q=');
+$('#s-tabelog').onclick= ()=>openSearch('https://tabelog.com/rst/rstsearch/?SrtT=rt&sk=');
+$('#s-map').onclick    = ()=>openSearch('https://www.google.com/maps/search/');
+function openSearch(base){
+  const n=(cur().name||'').trim();
+  if(!n){ toast('先に店名を入れてください'); $('#f-name').focus(); return; }
+  window.open(base+encodeURIComponent(n), '_blank', 'noopener');
+}
+
+$('#newEntry').onclick = ()=>{ const e=blank(); store.entries.unshift(e); store.current=e.id; save(); drawAll();
+  window.scrollTo({top:0,behavior:'smooth'}); $('#f-name').focus(); };
+
+$('#delEntry').onclick = ()=>ask('この記録を消しますか', (cur().name||'店名未入力')+'　写真'+cur().photos.length+'枚も一緒に消えます。元に戻せません。', ()=>{
+  store.entries = store.entries.filter(e=>e.id!==store.current);
+  if(!store.entries.length) store.entries=[blank()];
+  store.current = store.entries[0].id; save(); drawAll();
+});
+
+$('#arrange').onclick = ()=>ask('うどんが主食風にアレンジ',
+  'この機能はまだこの端末では動きません。いまは殴り書きのまま書き出してください。加藤さん側でアレンジします。',
+  null, 'わかりました');
+
+$('#drop').onclick = ()=>$('#picker').click();
+$('#picker').onchange = (e)=>{ intake(e.target.files); e.target.value=''; };
+['dragenter','dragover'].forEach(t=>$('#drop').addEventListener(t,(e)=>{
+  e.preventDefault(); $('#drop').classList.add('hot'); }));
+['dragleave','drop'].forEach(t=>$('#drop').addEventListener(t,(e)=>{
+  e.preventDefault(); $('#drop').classList.remove('hot'); }));
+$('#drop').addEventListener('drop',(e)=>{ if(e.dataTransfer) intake(e.dataTransfer.files); });
+document.addEventListener('dragover',(e)=>e.preventDefault());
+document.addEventListener('drop',(e)=>e.preventDefault());
+
+$('#exportBtn').onclick = ()=>{
+  const out = {
+    format:'udon-memo/1',
+    exported: new Date().toISOString(),
+    entries: store.entries.map(e=>({
+      date:e.date, name:e.name, addr:e.addr, tel:e.tel, googleUrl:e.gurl, tabelogUrl:e.turl,
+      weather:e.weather, slot:e.slot, yenPerPerson:e.yen,
+      scores:e.scores, scoresOutOf:50, body:e.body,
+      photos:e.photos.map((p,i)=>({order:i+1, name:p.name, caption:p.cap,
+        width:p.w, height:p.h, blurred:(p.blurs||[]).length>0, data:flatten(p)}))
+    }))
+  };
+  const blob=new Blob([JSON.stringify(out)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='udon-memo-'+todayStr()+'.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();}, 1000);
+  toast('書き出しました。Googleドライブに入れてください。');
+};
+/* ぼかしを焼き込んでから書き出す（元画像は残さない） */
+function flatten(p){
+  if(!p.blurs || !p.blurs.length) return p.data;
+  const cv=document.createElement('canvas'); cv.width=p.w; cv.height=p.h;
+  const ctx=cv.getContext('2d');
+  const im=new Image(); im.src=p.data;
+  try{ ctx.drawImage(im,0,0,p.w,p.h); p.blurs.forEach(b=>mosaic(ctx,b,cv));
+       return cv.toDataURL('image/jpeg',0.86); }
+  catch(e){ return p.data; }
+}
+
+function ask(t,b,onYes,yesLabel){
+  $('#dlgT').textContent=t; $('#dlgB').textContent=b;
+  $('#dlgYes').textContent=yesLabel||'はい';
+  $('#dlgNo').style.display = onYes ? '' : 'none';
+  const d=$('#dlg'); d.showModal();
+  $('#dlgYes').onclick=()=>{ d.close(); if(onYes) onYes(); };
+  $('#dlgNo').onclick=()=>d.close();
+}
+
+drawAll();
+save();
+</script>
+</body>
+</html>
