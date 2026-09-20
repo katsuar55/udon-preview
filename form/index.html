@@ -358,7 +358,7 @@ function drawPhotos(){
     const acts=el('div','acts');
     acts.appendChild(mk('↑', ()=>move(i,-1)));
     acts.appendChild(mk('↓', ()=>move(i, 1)));
-    acts.appendChild(mk(p.blurs && p.blurs.length ? 'ぼかしを消す' : 'ぼかす', ()=>{
+    acts.appendChild(mk(p.blurs && p.blurs.length ? '隠しを消す' : '自動で顔を探す', ()=>{
       if(p.blurs && p.blurs.length){ p.blurs=[]; }
       else { autoBlur(p); }
       save(); drawPhotos();
@@ -366,10 +366,10 @@ function drawPhotos(){
     acts.appendChild(mk('削除', ()=>{ ps.splice(i,1); cur().updated=Date.now(); save(); drawPhotos(); }));
     m.appendChild(acts);
     if(p.blurs && p.blurs.length){
-      const w=el('span','blurred'); w.textContent='ぼかし '+p.blurs.length+'箇所'; m.appendChild(w);
+      const w=el('span','blurred'); w.textContent='隠した箇所 '+p.blurs.length; m.appendChild(w);
     } else {
       const w=el('span','blurred'); w.style.color='var(--muted)';
-      w.textContent='顔が写っていたら、写真の上を指でなぞるとぼかせます';
+      w.textContent='顔が写っていたら、写真の上を指でなぞって囲むと隠せます';
       m.appendChild(w);
     }
     d.appendChild(m);
@@ -384,27 +384,22 @@ function paint(cv,p){
   const img=new Image();
   img.onload=()=>{
     ctx.drawImage(img,0,0,cv.width,cv.height);
-    (p.blurs||[]).forEach(b=>mosaic(ctx,b,cv));
+    (p.blurs||[]).forEach(b=>maskOut(ctx,b,cv));
   };
   img.src=p.data;
 }
-function mosaic(ctx,b,cv){
+/* 不透明で塗りつぶす。モザイクやぼかしは元の画素が残るため復元されうる。
+   顔を隠す目的では、情報を捨てる塗りつぶし以外は使わない。 */
+function maskOut(ctx,b,cv){
   const x=Math.max(0,Math.round(b.x*cv.width)), y=Math.max(0,Math.round(b.y*cv.height));
   const w=Math.min(cv.width-x,Math.round(b.w*cv.width)), h=Math.min(cv.height-y,Math.round(b.h*cv.height));
   if(w<2||h<2) return;
-  const cell=Math.max(4, Math.round(Math.min(w,h)/5));
-  const src=ctx.getImageData(x,y,w,h);
-  for(let yy=0; yy<h; yy+=cell){
-    for(let xx=0; xx<w; xx+=cell){
-      let r=0,g=0,bl=0,c=0;
-      for(let j=yy;j<Math.min(yy+cell,h);j++) for(let i=xx;i<Math.min(xx+cell,w);i++){
-        const o=(j*w+i)*4; r+=src.data[o]; g+=src.data[o+1]; bl+=src.data[o+2]; c++;
-      }
-      if(!c) continue;
-      ctx.fillStyle='rgb('+Math.round(r/c)+','+Math.round(g/c)+','+Math.round(bl/c)+')';
-      ctx.fillRect(x+xx, y+yy, Math.min(cell,w-xx), Math.min(cell,h-yy));
-    }
-  }
+  ctx.save();
+  ctx.fillStyle='#2b2928';
+  ctx.fillRect(x,y,w,h);
+  ctx.fillStyle='rgba(255,255,255,.14)';
+  ctx.fillRect(x, y+Math.round(h/2)-1, w, 2);   // 意図的に隠したと分かる印
+  ctx.restore();
 }
 /* 指やマウスで四角を描いてぼかす。自動検出が外れても必ず消せる */
 function enableBlurBox(cv,p){
@@ -431,9 +426,10 @@ async function autoBlur(p){
     const img=new Image(); img.src=p.data; await img.decode();
     const fd=new window.FaceDetector({fastMode:true});
     const faces=await fd.detect(img);
-    if(!faces.length){ toast('顔は見つかりませんでした。手でなぞって囲めます。'); return; }
-    p.blurs=faces.map(f=>({x:f.boundingBox.x/img.width, y:f.boundingBox.y/img.height,
-                           w:f.boundingBox.width/img.width, h:f.boundingBox.height/img.height}));
+    if(!faces.length){ toast('自動では見つかりませんでした。自動検出は当てになりません。必ず目で確認して、手でなぞって囲んでください。'); return; }
+    p.blurs=(p.blurs||[]).concat(faces.map(f=>({x:f.boundingBox.x/img.width, y:f.boundingBox.y/img.height,
+                           w:f.boundingBox.width/img.width, h:f.boundingBox.height/img.height})));
+    toast(faces.length+'箇所を候補にしました。**見落としがあるので必ず目で確認してください。**');
   }catch(e){ toast('自動検出に失敗しました。手でなぞって囲めます。'); }
 }
 function toast(msg){ $('#footNote').textContent=msg; setTimeout(()=>{$('#footNote').textContent='自動保存しています';},4200); }
@@ -540,13 +536,13 @@ $('#exportBtn').onclick = ()=>{
   setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();}, 1000);
   toast('書き出しました。Googleドライブに入れてください。');
 };
-/* ぼかしを焼き込んでから書き出す（元画像は残さない） */
+/* 隠しを焼き込んでから書き出す（元画像は残さない） */
 function flatten(p){
   if(!p.blurs || !p.blurs.length) return p.data;
   const cv=document.createElement('canvas'); cv.width=p.w; cv.height=p.h;
   const ctx=cv.getContext('2d');
   const im=new Image(); im.src=p.data;
-  try{ ctx.drawImage(im,0,0,p.w,p.h); p.blurs.forEach(b=>mosaic(ctx,b,cv));
+  try{ ctx.drawImage(im,0,0,p.w,p.h); p.blurs.forEach(b=>maskOut(ctx,b,cv));
        return cv.toDataURL('image/jpeg',0.86); }
   catch(e){ return p.data; }
 }
