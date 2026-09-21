@@ -249,10 +249,27 @@ function save(){
       const s=$('#saved'); s.textContent='保存済み'; s.classList.add('on');
       setTimeout(()=>s.classList.remove('on'), 1400);
     }catch(err){
-      $('#saved').textContent='保存できません（容量超過かも）';
+      // 保存できないまま作業を続けさせない。閉じた瞬間に全部消えるため。
+      saveBroken = true;
+      $('#saved').textContent='保存できていません';
+      $('#saved').style.color='var(--accent)';
+      $('#footNote').textContent='⚠ この端末に保存できません。いますぐ「書き出す」を押してください。';
+      $('#footNote').style.color='var(--accent)';
+      ask('この端末に保存できません',
+          'スマホやパソコンの保存領域がいっぱいです。このまま入力を続けても、'+
+          'ページを閉じた時点で消えてしまいます。\n\n'+
+          'いますぐ「書き出す」を押してファイルに残してください。'+
+          'そのあと、写真の枚数を減らすか、店舗をいくつか書き出して削除してください。',
+          null, '書き出す');
+      $('#dlgYes').onclick=()=>{ $('#dlg').close(); $('#exportBtn').click(); };
     }
   }, 250);
 }
+let saveBroken = false;
+/* 閉じる直前に保留中の保存を確定させる */
+addEventListener('pagehide', ()=>{
+  try{ clearTimeout(saveTimer); localStorage.setItem(KEY, JSON.stringify(store)); }catch(e){}
+});
 const cur = ()=> store.entries.find(e=>e.id===store.current) || store.entries[0];
 
 /* ---------- 記録タブ ---------- */
@@ -300,11 +317,22 @@ function wireScores(){
   const inputs=[...document.querySelectorAll('#scores input')];
   inputs.forEach((inp,idx)=>{
     inp.addEventListener('focus', ()=>inp.select());
+    inp.dataset.prev = inp.value;
     inp.addEventListener('input', ()=>{
-      let v=inp.value.replace(/[^0-9]/g,'');
+      // 全角数字も受ける
+      let v=inp.value.replace(/[０-９]/g, c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0))
+                     .replace(/[^0-9]/g,'');
       if(v.length>2) v=v.slice(0,2);
-      if(Number(v)>50) v=v.slice(0,1);          // 51以上は打てない
-      inp.value=v;
+      // 51以上は「切り詰めて別の点数にする」のではなく、入力を戻して知らせる。
+      // 59が5に化けると、本人は59のつもりで5点になる。
+      if(v!=='' && Number(v)>50){
+        inp.value = inp.dataset.prev || '';
+        inp.style.color='var(--accent)';
+        $('#scoreHint').textContent='0〜50で入れてください。'+v+'は50を超えています。';
+        setTimeout(()=>{ inp.style.color=''; refreshEq(); }, 1800);
+        return;                                  // 次へ進めない
+      }
+      inp.value=v; inp.dataset.prev=v;
       cur().scores[inp.dataset.k]=v; cur().updated=Date.now(); save(); refreshEq();
       // 2桁入ったら次へ。1桁でも6〜9なら50を超えないので次へ
       if(v.length===2 || (v.length===1 && Number(v)>5)) next(idx);
@@ -435,30 +463,48 @@ async function autoBlur(p){
 function toast(msg){ $('#footNote').textContent=msg; setTimeout(()=>{$('#footNote').textContent='自動保存しています';},4200); }
 
 /* 取り込み：長辺400pxへ縮小。EXIFはcanvas経由で落ちる（位置情報が残らない） */
-function intake(files){
+/* 取り込み。読み込み中に店を切り替えても、開始時の店へ入るよう固定する。
+   選んだ順番も保つ（完了順に積むと並びが狂う）。 */
+async function intake(files){
   const list=[...files].filter(f=>/^image\//.test(f.type));
-  if(!list.length) return;
-  let done=0;
-  $('#footNote').textContent='取り込み中…';
-  list.forEach(f=>{
+  if(!list.length){ toast('画像ファイルが見つかりませんでした'); return; }
+  const target = cur();                       // ← ここで固定
+  const targetId = target.id;
+  const slots = new Array(list.length).fill(null);
+  let ok=0, ng=0;
+  $('#footNote').textContent=`取り込み中… 0/${list.length}`;
+
+  await Promise.all(list.map((f,i)=>new Promise(res=>{
     const fr=new FileReader();
+    fr.onerror=()=>{ ng++; res(); };
     fr.onload=()=>{
       const img=new Image();
+      img.onerror=()=>{ ng++; res(); };      // HEIC等でデコードできない場合
       img.onload=()=>{
-        const sc=Math.min(1, MAXW/Math.max(img.width,img.height));
-        const w=Math.round(img.width*sc), h=Math.round(img.height*sc);
-        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
-        cv.getContext('2d').drawImage(img,0,0,w,h);
-        cur().photos.push({name:f.name, w:w, h:h, cap:'', blurs:[],
-                           data:cv.toDataURL('image/jpeg',0.86)});
-        if(++done===list.length){ cur().updated=Date.now(); save(); drawPhotos();
-          $('#footNote').textContent=list.length+'枚を取り込みました'; }
+        try{
+          const sc=Math.min(1, MAXW/Math.max(img.width,img.height));
+          const w=Math.round(img.width*sc), h=Math.round(img.height*sc);
+          const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+          cv.getContext('2d').drawImage(img,0,0,w,h);
+          slots[i]={name:f.name, w:w, h:h, cap:'', blurs:[],
+                    data:cv.toDataURL('image/jpeg',0.86)};
+          ok++;
+        }catch(e){ ng++; }
+        $('#footNote').textContent=`取り込み中… ${ok+ng}/${list.length}`;
+        res();
       };
-      img.onerror=()=>{ if(++done===list.length){ save(); drawPhotos(); } };
       img.src=fr.result;
     };
     fr.readAsDataURL(f);
-  });
+  })));
+
+  slots.filter(Boolean).forEach(p=>target.photos.push(p));
+  target.updated=Date.now(); save();
+  if(store.current===targetId) drawPhotos(); else drawTabs();
+  $('#footNote').textContent = ng
+    ? `${ok}枚を取り込みました。${ng}枚は読めませんでした（iPhoneのHEIC形式かもしれません。設定→カメラ→フォーマット→「互換性優先」でJPEGになります）`
+    : `${ok}枚を取り込みました`
+      + (store.current===targetId ? '' : `（「${target.name||'店名未入力'}」に入れました）`);
 }
 
 /* ---------- 画面全体 ---------- */
@@ -516,18 +562,38 @@ $('#drop').addEventListener('drop',(e)=>{ if(e.dataTransfer) intake(e.dataTransf
 document.addEventListener('dragover',(e)=>e.preventDefault());
 document.addEventListener('drop',(e)=>e.preventDefault());
 
-$('#exportBtn').onclick = ()=>{
-  const out = {
-    format:'udon-memo/1',
-    exported: new Date().toISOString(),
-    entries: store.entries.map(e=>({
-      date:e.date, name:e.name, addr:e.addr, tel:e.tel, googleUrl:e.gurl, tabelogUrl:e.turl,
-      weather:e.weather, slot:e.slot, yenPerPerson:e.yen,
-      scores:e.scores, scoresOutOf:50, body:e.body,
-      photos:e.photos.map((p,i)=>({order:i+1, name:p.name, caption:p.cap,
-        width:p.w, height:p.h, blurred:(p.blurs||[]).length>0, data:flatten(p)}))
-    }))
-  };
+$('#exportBtn').onclick = async ()=>{
+  const btn=$('#exportBtn'); btn.disabled=true; btn.textContent='処理中…';
+  let out;
+  try{
+    const entries=[];
+    for(const e of store.entries){
+      const photos=[];
+      for(let i=0;i<e.photos.length;i++){
+        const p=e.photos[i];
+        let data;
+        try{ data = await flatten(p); }
+        catch(err){
+          toast(`${e.name||'店名未入力'} の写真${i+1}枚目で隠し処理に失敗しました。書き出しを中止します。`);
+          ask('書き出しを中止しました',
+              `「${e.name||'店名未入力'}」の写真${i+1}枚目で、隠した部分を焼き込めませんでした。`+
+              `このまま書き出すと、隠したはずの顔がファイルに残る可能性があります。`+
+              `その写真を削除するか、隠し直してからもう一度お試しください。`,
+              null, '閉じる');
+          btn.disabled=false; btn.textContent='書き出す';
+          return;
+        }
+        photos.push({order:i+1, name:p.name, caption:p.cap,
+                     width:p.w, height:p.h, blurred:(p.blurs||[]).length>0, data:data});
+      }
+      entries.push({date:e.date, name:e.name, addr:e.addr, tel:e.tel,
+        googleUrl:e.gurl, tabelogUrl:e.turl, weather:e.weather, slot:e.slot,
+        yenPerPerson:e.yen, scores:e.scores, scoresOutOf:50, body:e.body, photos:photos});
+    }
+    out = { format:'udon-memo/1', exported:new Date().toISOString(), entries:entries };
+  } finally {
+    btn.disabled=false; btn.textContent='書き出す';
+  }
   const blob=new Blob([JSON.stringify(out)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -536,15 +602,37 @@ $('#exportBtn').onclick = ()=>{
   setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();}, 1000);
   toast('書き出しました。Googleドライブに入れてください。');
 };
-/* 隠しを焼き込んでから書き出す（元画像は残さない） */
-function flatten(p){
+/* 隠しを焼き込んでから書き出す。
+   デコード完了を必ず待つ。失敗したら元画像を返さず例外を投げて書き出し全体を止める。
+   （元画像を返すと、画面では隠れて見えるのにファイルには顔が残る） */
+async function flatten(p){
   if(!p.blurs || !p.blurs.length) return p.data;
-  const cv=document.createElement('canvas'); cv.width=p.w; cv.height=p.h;
-  const ctx=cv.getContext('2d');
-  const im=new Image(); im.src=p.data;
-  try{ ctx.drawImage(im,0,0,p.w,p.h); p.blurs.forEach(b=>maskOut(ctx,b,cv));
-       return cv.toDataURL('image/jpeg',0.86); }
-  catch(e){ return p.data; }
+  const im = new Image();
+  im.src = p.data;
+  await im.decode();                       // ここを待たないと空白か元画像になる
+  const cv = document.createElement('canvas');
+  cv.width = p.w; cv.height = p.h;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(im, 0, 0, p.w, p.h);
+  p.blurs.forEach(b => maskOut(ctx, b, cv));
+  const out = cv.toDataURL('image/jpeg', 0.86);
+  // 焼き込めたかを実際に読み返して検証する
+  const chk = new Image();
+  chk.src = out;
+  await chk.decode();
+  const v = document.createElement('canvas');
+  v.width = p.w; v.height = p.h;
+  const vx = v.getContext('2d');
+  vx.drawImage(chk, 0, 0, p.w, p.h);
+  const b0 = p.blurs[0];
+  const px = vx.getImageData(
+    Math.min(p.w - 1, Math.round((b0.x + b0.w / 2) * p.w)),
+    Math.min(p.h - 1, Math.round((b0.y + b0.h / 2) * p.h)), 1, 1).data;
+  // 塗りつぶし色 #2b2928 = rgb(43,41,40)。JPEG圧縮の誤差を見込んで±14
+  if (Math.abs(px[0]-43) > 14 || Math.abs(px[1]-41) > 14 || Math.abs(px[2]-40) > 14) {
+    throw new Error('隠し処理を確認できませんでした');
+  }
+  return out;
 }
 
 function ask(t,b,onYes,yesLabel){
